@@ -1,0 +1,92 @@
+#!/bin/bash
+PWD=`pwd`
+export PATH=$PWD:$PATH
+PROGRAMMER=prog_emmc_firehose_8996_ddr.elf
+EDLPORT=/dev/ttyUSB0
+HOSTOS=`uname -s | tr A-Z a-z`
+
+if [ $HOSTOS != linux ]
+then
+    echo "[31mError: please run this tool in Linux OS[0m"
+    exit
+fi
+if [ -e $PROGRAMMER ]
+then
+    echo "[32m ----------Images Flashing is Started----------[0m"
+else
+    echo "[31mError: can not find $PROGRAMMER, please copy[0m [32m8996_downloader fh_loader kickstart[0m [31mto QFile package release folder[0m"
+    exit
+fi
+
+SYSTEMIMG_NUM=`ls -l system* | wc -l`
+USERDATAIMG_NUM=`ls -l userdata* | wc -l`
+if [ $SYSTEMIMG_NUM = 1 ] || [ $USERDATAIMG_NUM = 1 ]
+then
+    echo "[31mError: this is NOT QFILE package[0m"
+    exit
+fi
+mkdir -p $PWD/dl_log
+# step 1: flash programmer
+if [ -e $EDLPORT ]
+#if [ 1 ]
+then
+    echo "flashing $PROGRAMMER ......"
+    kickstart -p $EDLPORT -t 10 -s 13:prog_emmc_firehose_8996_ddr.elf > $PWD/dl_log
+    if [ $? != 0 ]
+    then
+	echo "[31mError: programmer $PROGRAMMER flashing failed[0m"
+	exit
+    else
+	echo "[32m$PROGRAMMER flashing done[0m"
+    fi
+else
+    echo "[31mERROR: $EDLPORT does not exist, please make device going into EDL[0m"
+    exit
+fi
+
+RAWPROGRAM_XML=`ls rawprogram*.xml`
+PATCH_XML=`ls patch*.xml`
+#step 2: send images with specified in program xml files
+if [ -e $EDLPORT ]
+#if [ 1 ]
+then
+    echo "flashing images ......"
+    for RAWPROGRAM in $RAWPROGRAM_XML; do
+	echo "	flashing $RAWPROGRAM ......"
+	fh_loader --port=$EDLPORT --sendxml=$RAWPROGRAM --noprompt --showpercentagecomplete --memoryname=UFS --zlpawarehost=0 > $PWD/dl_log
+	if [ $? != 0 ]
+	then
+	    echo "[31mError: $RAWPROGRAM flashing failed[0m"
+            exit
+	fi
+    done
+    echo "[32mFlashing images done![0m"
+
+
+#step 3: make patch
+    echo "making patch ......"
+    for PATCH in $PATCH_XML; do
+	echo "	making patch $PATCH ......"
+	fh_loader --port=$EDLPORT --sendxml=$PATCH --noprompt --showpercentagecomplete --memoryname=UFS --zlpawarehost=0 > $PWD/dl_log
+	if [ $? != 0 ]
+	then
+	   echo "[31mError: making patch $PATCH failed[0m"
+	   exit
+	fi
+    done
+    echo "[32mMaking patch done![0m"
+    echo "[32m----------Images flashing is Completed!-----------[0m"
+
+#step 4 reset
+    echo "resetting device..."
+    fh_loader --port=$EDLPORT  --reset --memoryname=UFS --zlpawarehost=0 
+    if [ $? != 0 ]
+    then
+	echo "[31mResetting device failed[0m"
+    else
+	echo "[32mRecetting device done![0m"
+    fi
+else
+    echo "[31m ERROR: $EDLPORT does not exist, please make device going into EDL[0m"
+    exit
+fi
